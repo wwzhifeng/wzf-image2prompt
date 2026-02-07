@@ -1,0 +1,5 @@
+Florence2 新增依赖
+
+transformers==4.44.2
+tokenizers==0.19.1
+accelerate
