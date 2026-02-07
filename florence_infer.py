@@ -18,7 +18,6 @@ def _comfy_image_to_pil(image_tensor):
     img = img.detach().cpu().clamp(0, 1).numpy()
     img = (img * 255.0).astype(np.uint8)
 
-    # [H,W,C]
     return Image.fromarray(img)
 
 
@@ -41,7 +40,46 @@ class WZF_ImageToPrompt_Florence2:
                     "<OCR>",
                     "<OD>",
                 ], {"default": "<DETAILED_CAPTION>"}),
+
                 "max_new_tokens": ("INT", {"default": 128, "min": 16, "max": 512, "step": 1}),
+
+                # ===== Prompt Director =====
+                "composition": ([
+                    "Full Body｜全身",
+                    "Medium Shot｜半身",
+                    "Close Up｜特写",
+                    "Wide Shot｜远景",
+                    "Product Focus｜主体居中",
+                ], {"default": "Full Body｜全身"}),
+
+                "lighting": ([
+                    "Studio Light｜棚拍光",
+                    "Soft Daylight｜柔和日光",
+                    "Cinematic｜电影感",
+                    "High Contrast｜高反差",
+                ], {"default": "Soft Daylight｜柔和日光"}),
+
+                "quality": ([
+                    "Standard｜标准",
+                    "Commercial｜商业",
+                    "Editorial｜杂志",
+                    "Luxury｜高端",
+                ], {"default": "Commercial｜商业"}),
+
+                "material": ([
+                    "Natural｜自然",
+                    "Premium｜高级",
+                    "Glossy｜光泽",
+                    "Matte｜哑光",
+                ], {"default": "Premium｜高级"}),
+
+                "detail": ([
+                    "Balanced｜均衡",
+                    "High｜丰富",
+                    "Extreme｜极致",
+                ], {"default": "High｜丰富"}),
+
+                "safety": ("BOOLEAN", {"default": True}),
             }
         }
 
@@ -51,13 +89,24 @@ class WZF_ImageToPrompt_Florence2:
     CATEGORY = "WZF"
 
     @torch.inference_mode()
-    def run(self, image, model, processor, task, max_new_tokens):
+    def run(
+        self,
+        image,
+        model,
+        processor,
+        task,
+        max_new_tokens,
+        composition,
+        lighting,
+        quality,
+        material,
+        detail,
+        safety,
+    ):
         pil = _comfy_image_to_pil(image)
 
-        # Florence2习惯用 task token 作为文本输入
         inputs = processor(text=task, images=pil, return_tensors="pt")
 
-        # 跟随模型所在设备
         dev = next(model.parameters()).device
         inputs = {k: v.to(dev) if hasattr(v, "to") else v for k, v in inputs.items()}
 
@@ -69,13 +118,10 @@ class WZF_ImageToPrompt_Florence2:
 
         text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
-        # 有些实现带 post_process_generation
         try:
             w, h = pil.size
             processed = processor.post_process_generation(text, task=task, image_size=(w, h))
-            # caption类通常会返回 dict 或 str
             if isinstance(processed, dict):
-                # 尽量拿caption
                 if "caption" in processed:
                     text = processed["caption"]
                 else:
@@ -87,6 +133,63 @@ class WZF_ImageToPrompt_Florence2:
         except Exception:
             pass
 
-        # 你要喂给文生图，做个简单清洗
         text = text.strip().replace("\n", " ")
+
+        # ==============================
+        # Prompt Director Engine
+        # ==============================
+
+        comp_map = {
+            "Full Body｜全身": "full body framing, standing pose",
+            "Medium Shot｜半身": "medium shot, waist up",
+            "Close Up｜特写": "close up portrait, face focus",
+            "Wide Shot｜远景": "wide shot, environmental framing",
+            "Product Focus｜主体居中": "center composition, product focus",
+        }
+
+        lighting_map = {
+            "Studio Light｜棚拍光": "studio lighting",
+            "Soft Daylight｜柔和日光": "soft daylight",
+            "Cinematic｜电影感": "cinematic light",
+            "High Contrast｜高反差": "high contrast lighting",
+        }
+
+        quality_map = {
+            "Standard｜标准": "",
+            "Commercial｜商业": "commercial photography",
+            "Editorial｜杂志": "editorial grade",
+            "Luxury｜高端": "luxury, premium production",
+        }
+
+        material_map = {
+            "Natural｜自然": "",
+            "Premium｜高级": "premium texture",
+            "Glossy｜光泽": "glossy material",
+            "Matte｜哑光": "matte finish",
+        }
+
+        detail_map = {
+            "Balanced｜均衡": "",
+            "High｜丰富": "high detail",
+            "Extreme｜极致": "extreme detail, ultra sharp",
+        }
+
+        print(composition, lighting, quality)
+
+        parts = [
+            comp_map.get(composition, ""),
+            lighting_map.get(lighting, ""),
+            quality_map.get(quality, ""),
+            text,
+            material_map.get(material, ""),
+            detail_map.get(detail, ""),
+            "refined aesthetics, controlled composition, premium visual order",
+        ]
+
+        text = ", ".join([p for p in parts if p])
+
+        if safety:
+            text += ", correct anatomy, clean structure, no distortion"
+
         return (text,)
+
