@@ -1,3 +1,13 @@
+# model weights
 models/
+
+# huggingface cache
 _hf_cache/
+
+# python cache
 __pycache__/
+*.pyc
+
+# system
+.DS_Store
+Thumbs.db
