@@ -122,16 +122,15 @@ class WZF_ImageToPrompt_Florence2:
             w, h = pil.size
             processed = processor.post_process_generation(text, task=task, image_size=(w, h))
             if isinstance(processed, dict):
-                if "caption" in processed:
-                    text = processed["caption"]
-                else:
-                    text = str(processed)
+                # Florence2 返回通常是 { "<TASK>": "caption" }
+                text = processed.get(task) or next(iter(processed.values()), "")
             elif isinstance(processed, str):
                 text = processed
             else:
                 text = str(processed)
         except Exception:
             pass
+
 
         text = text.strip().replace("\n", " ")
 
